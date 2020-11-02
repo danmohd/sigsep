@@ -25,13 +25,17 @@ def generate_two_stem_data(mus: musdb.DB, chunk_duration=5.0):
 
     accompaniment : np.ndarray, (nsamples, 2)
         Accompaniment data
+
+    rate : int
+        Sample rate of audio
     """
     track = random.choice(mus.tracks)
     track.chunk_duration = chunk_duration
-    track.chunk_start = random.uniform(0, track.duration - track.chuck_duration)
+    track.chunk_start = random.uniform(0, track.duration - track.chunk_duration)
 
     mixture = track.audio
     vocals = track.targets["vocals"].audio
     accompaniment = track.targets["accompaniment"].audio
+    rate = track.rate
 
-    yield mixture, vocals, accompaniment
+    yield mixture, vocals, accompaniment, rate

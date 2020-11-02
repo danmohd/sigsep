@@ -10,11 +10,12 @@ import librosa
 from soundfile import write
 import helpers
 
-
+# TODO: MAKE EVERYTHING A FUNCTION
 if __name__ == "__main__":
     root = Path("..", "musdb18hq")
 
-    mus_train = musdb.DB(root=root, subsets="train", is_wav=True)
+    mus_train = musdb.DB(root=root, subsets="train", split="train", is_wav=True)
+    mus_valid = musdb.DB(root=root, subsets="train", split="valid", is_wav=True)
     mus_test = musdb.DB(root=root, subsets="test", is_wav=True)
 
     mixture, vocals, accompaniment, rate = next(helpers.generate_two_stem_data(mus_train, chunk_duration=5.0))
@@ -36,11 +37,11 @@ if __name__ == "__main__":
     n_components = 2048
 
     print("Starting Vocals NMF")
-    vocals_components, vocals_weights, n_iter = non_negative_factorization(vocals_mags, n_components=n_components, beta_loss="kullback-leibler", solver="mu")
+    vocals_components, vocals_weights, n_iter = non_negative_factorization(vocals_mags, n_components=n_components, beta_loss="kullback-leibler", solver="mu", max_iter=400)
     print(f"Finished Vocals NMF in {n_iter} iterations.")
 
     print("Starting Accomponiment NMF")
-    accompaniment_components, accompaniment_weights, n_iter = non_negative_factorization(accompaniment_mags, n_components=n_components, beta_loss="kullback-leibler", solver="mu")
+    accompaniment_components, accompaniment_weights, n_iter = non_negative_factorization(accompaniment_mags, n_components=n_components, beta_loss="kullback-leibler", solver="mu", max_iter=400)
     print(f"Finished Accomponiment NMF in {n_iter} iterations")
 
     # BV bases for vocals
@@ -48,6 +49,7 @@ if __name__ == "__main__":
     # B = [BV BA]
     mixture_components = np.hstack((vocals_components, accompaniment_components))
 
+    # TODO: Replace with KL Divergence based iterations
     print("Starting Separation with Lasso")
     model = Lasso(alpha=0.5, fit_intercept=False, positive=True, selection="random")
     model.fit(mixture_components, mixture_mags)
