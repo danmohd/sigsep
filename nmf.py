@@ -13,6 +13,7 @@ from multiprocessing import Pool
 # TODO: MAKE EVERYTHING A FUNCTION
 if __name__ == "__main__":
     root = Path("..", "musdb18hq")
+    results_path = Path(".", "results")
 
     mus_train = musdb.DB(root=root, subsets="train",
                          split="train", is_wav=True)
@@ -79,6 +80,7 @@ if __name__ == "__main__":
     learned_accompaniment = helpers.reconstruct_audio(
         accompaniment_components, learned_accompaniment_weights, mixture_phases)
 
-    write("mixture.wav", mixture, rate)
-    write("learned_vocals.wav", learned_vocals, rate)
-    write("learned_accompaniment.wav", learned_accompaniment, rate)
+    write(results_path / "mixture.wav", mixture, rate)
+    write(results_path / "learned_vocals.wav", learned_vocals, rate)
+    write(results_path / "learned_accompaniment.wav",
+          learned_accompaniment, rate)
