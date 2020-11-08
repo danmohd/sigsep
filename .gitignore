@@ -1,2 +1,4 @@
-.wav
+*.wav
 .vscode/**
+results/**
+__pycache__/**
