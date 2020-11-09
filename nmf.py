@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
+from nmf.helpers import generate_two_stem_data
+from nmf import NMFResults, generate_four_stem_data, get_magphase, learn_representation, make_mono, reconstruct_audio, model_train, model_test, model_separate
 from pathlib import Path
 import numpy as np
 import musdb
 # import matplotlib.pyplot as plt
-from sklearn.linear_model import orthogonal_mp
+# from sklearn.linear_model import orthogonal_mp
+from sklearn.decomposition import non_negative_factorization
 from soundfile import write
 from multiprocessing import Pool
-
-from helpers import NMFResults, generate_four_stem_data, get_magphase, learn_representation, make_mono, reconstruct_audio
+import joblib
 
 
 # TODO: MAKE EVERYTHING A FUNCTION
-if __name__ == "__main__":
+def temp():
     root = Path("..", "musdb18hq")
     results_path = Path(".", "results")
 
@@ -81,10 +83,10 @@ if __name__ == "__main__":
     pool.close()
     pool.join()
 
-    vocals_components, vocals_weights, vocals_iter = results.vocals
-    drums_components, drums_weights, drums_iter = results.drums
-    bass_components, bass_weights, bass_iter = results.bass
-    others_components, others_weights, others_iter = results.others
+    vocals_components = results.vocals[0]
+    drums_components = results.drums[0]
+    bass_components = results.bass[0]
+    others_components = results.others[0]
 
     mixture_components = np.hstack(
         (vocals_components, drums_components, bass_components, others_components))
@@ -93,11 +95,24 @@ if __name__ == "__main__":
     mixture_mags, mixture_phases = get_magphase(
         mixture_mono, win_length=win_length)
 
-    print("Starting Separation with OMP")
-    mixture_weights = orthogonal_mp(mixture_components,
-                                    mixture_mags,
-                                    n_nonzero_coefs=(4 * n_components // 3))
-    print("Finished Separation with OMP")
+    # print("Starting Separation with OMP")
+    # mixture_weights = orthogonal_mp(mixture_components,
+    #                                 mixture_mags,
+    #                                 n_nonzero_coefs=(4 * n_components // 3))
+    # print("Finished Separation with OMP")
+
+    print("Starting Separation")
+    mixture_weights_T, mixture_components_T, n_iter = non_negative_factorization(
+        mixture_mags.T,
+        H=mixture_components.T,
+        n_components=4 * n_components,
+        update_H=False,
+        solver="mu",
+        max_iter=600,
+        beta_loss="kullback-leibler"
+    )
+    mixture_weights = mixture_weights_T.T
+    print("Finished Separation")
 
     learned_vocals_weights = mixture_weights[:n_components, :]
     learned_drums_weights = mixture_weights[n_components:(2 * n_components), :]
@@ -125,3 +140,40 @@ if __name__ == "__main__":
     write(results_path / "learned_drums.wav", learned_drums, rate)
     write(results_path / "learned_bass.wav", learned_bass, rate)
     write(results_path / "learned_others.wav", learned_others, rate)
+
+
+if __name__ == "__main__":
+    root = Path("..", "musdb18hq")
+    results_path = Path(".", "results")
+
+    mus_train = musdb.DB(root=root, is_wav=True, subsets="train")
+    mus_test = musdb.DB(root=root, is_wav=True, subsets="test")
+
+    components, data = model_train(mus_train, 50, 1, 5.0)
+
+    joblib.dump(components, results_path / "model.mdl")
+
+    components = joblib.load(results_path / "model.mdl")
+
+    data = next(generate_two_stem_data(mus_test, chunk_duration=15.0))
+
+    separations = model_separate(components, data[0])
+
+    # mixture, vocals, drums, bass, others, rate = data
+    # learned_vocals, learned_drums, learned_bass, learned_others = separations
+    mixture, vocals, accompaniment, rate = data
+    learned_vocals, learned_accompaniment = separations
+
+    write(results_path / "mixture.wav", mixture, rate)
+
+    write(results_path / "true_vocals.wav", vocals, rate)
+    write(results_path / "true_accompaniment.wav", accompaniment, rate)
+    # write(results_path / "true_drums.wav", drums, rate)
+    # write(results_path / "true_bass.wav", bass, rate)
+    # write(results_path / "true_others.wav", others, rate)
+
+    write(results_path / "learned_vocals.wav", learned_vocals, rate)
+    write(results_path / "learned_accompaniment.wav", learned_accompaniment, rate)
+    # write(results_path / "learned_drums.wav", learned_drums, rate)
+    # write(results_path / "learned_bass.wav", learned_bass, rate)
+    # write(results_path / "learned_others.wav", learned_others, rate)
