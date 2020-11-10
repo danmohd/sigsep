@@ -174,7 +174,8 @@ if __name__ == "__main__":
 
     results_path = results_path / data.name
 
-    mkdir(results_path)
+    if not results_path.exists():
+        mkdir(results_path)
 
     joblib.dump(components, results_path / "model.mdl")
 
