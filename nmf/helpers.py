@@ -3,12 +3,14 @@
 __all__ = [
     "generate_two_stem_data",
     "generate_four_stem_data",
+    "generate_four_stem_data_batch",
     "make_mono",
     "get_magphase",
     "reconstruct_audio",
     "learn_representation",
     "model_train",
     "model_separate",
+    "model_separate_and_evaluate",
     "model_test",
     "NMFResults"
 ]
@@ -18,11 +20,11 @@ import museval
 import random
 import librosa
 import numpy as np
-from sklearn.decomposition import non_negative_factorization
+from sklearn.decomposition import non_negative_factorization, DictionaryLearning
 from sklearn.linear_model import orthogonal_mp
 from multiprocessing import Pool
 
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Generator, List
 from functools import partial
 
 
@@ -110,6 +112,53 @@ def generate_four_stem_data(mus: musdb.DB, chunk_duration=5.0) -> Tuple[np.ndarr
         rate = track.rate
 
         yield mixture, vocals, drums, bass, others, rate
+
+
+def generate_four_stem_data_batch(mus: musdb.DB, batch_size: int = 10, chunk_duration_train: float = 15.0, chunk_duration_test: float = 15.0):
+    while True:
+        track = random.choice(mus.tracks)
+        for batch in range(batch_size):
+            track.chunk_duration = chunk_duration_train
+            track.chuck_start = random.uniform(
+                0, track.duration - track.chunk_duration
+            )
+
+            mixture = track.audio
+            vocals = track.targets["vocals"].audio
+            drums = track.targets["drums"].audio
+            bass = track.targets["bass"].audio
+            others = track.targets["other"].audio
+            rate = track.rate
+
+            yield mixture, vocals, drums, bass, others, rate
+
+        track.chunk_duration = chunk_duration_test
+        track.chunk_start = random.uniform(
+            0, track.duration - track.chunk_duration
+        )
+
+        # mixture = track.audio
+        # vocals = track.targets["vocals"].audio
+        # drums = track.targets["drums"].audio
+        # bass = track.targets["bass"].audio
+        # others = track.targets["other"].audio
+        # rate = track.rate
+
+        # yield mixture, vocals, drums, bass, others, rate
+        yield track
+
+
+def stitch_audio(batch: List[Tuple]) -> Tuple:
+    batch_size = len(batch)
+
+    stitched_data = list(batch[0])
+
+    for index in range(batch_size - 1):
+        new_data = list(batch[index + 1])
+        stitched_data = [np.hstack((s1, s2)) for s1, s2 in zip(stitched_data[:-1], new_data[:-1])]
+        stitched_data.append(new_data[-1])
+
+    return tuple(stitched_data)
 
 
 def make_mono(audio: np.ndarray) -> np.ndarray:
@@ -204,7 +253,19 @@ def learn_representation(audio: np.ndarray,
                                                               n_components=n_components,
                                                               beta_loss="kullback-leibler",
                                                               solver="mu",
+                                                              l1_ratio=1.0,
+                                                              alpha=0.1,
                                                               max_iter=max_iter)
+    # model = DictionaryLearning(n_components=n_components,
+    #                            tol=1e-1,
+    #                            fit_algorithm="cd",
+    #                            transform_algorithm="lasso_cd",
+    #                            positive_code=True,
+    #                            positive_dict=True,
+    #                            max_iter=max_iter)
+    # weights = model.fit_transform(mags.T).T
+    # components = model.components_.T
+    # n_iters = model.n_iter_
     return components, weights, n_iters
 
 
@@ -288,37 +349,41 @@ class NMFResults:
         self.others = new
 
 
-def model_train(mus: musdb.DB, n_components: int = 30, n_iter: int = 1, chunk_duration: float = 5.0) -> NMFResults:
-    # data_gen = generate_four_stem_data(mus, chunk_duration=chunk_duration)
-    data_gen = generate_two_stem_data(mus, chunk_duration=chunk_duration)
-    rng = np.random.default_rng()
+def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 10, n_iter: int = 1) -> NMFResults:
+    # rng = np.random.default_rng()
     results = NMFResults()
 
-    batch_size = 100
+    # batch_size = 20
 
-    data = next(data_gen)
+    data_batches = [next(data_gen) for i in range(batch_size)]
+    data = stitch_audio(data_batches)
 
-    for batch in range(batch_size - 1):
-        new_data = next(data_gen)
-        stitched_mixture = np.hstack((data[0], new_data[0]))
-        stitched_vocals = np.hstack((data[1], new_data[1]))
-        stitched_accompaniment = np.hstack((data[2], new_data[2]))
-        data = (stitched_mixture, stitched_vocals, stitched_accompaniment, data[-1])
+    # for batch in range(batch_size - 1):
+    #     new_data = next(data_gen)
+    #     stitched_mixture = np.hstack((data[0], new_data[0]))
+    #     stitched_vocals = np.hstack((data[1], new_data[1]))
+    #     # stitched_accompaniment = np.hstack((data[2], new_data[2]))
+    #     stitched_drums = np.hstack((data[2], new_data[2]))
+    #     stiched_bass = np.hstack((data[3], new_data[3]))
+    #     stitched_others = np.hstack((data[4], new_data[4]))
+    #     # data = (stitched_mixture, stitched_vocals, stitched_accompaniment, data[-1])
+    #     data = (stitched_mixture, stitched_vocals, stitched_drums,
+    #             stiched_bass, stitched_others, data[-1])
 
-    # mixture, vocals, drums, bass, others, rate = data
-    mixture, vocals, accompaniment, rate = data
+    mixture, vocals, drums, bass, others, rate = data
+    # mixture, vocals, accompaniment, rate = data
 
     vocals_mono = make_mono(vocals)
-    accompaniment_mono = make_mono(accompaniment)
-    # drums_mono = make_mono(drums)
-    # bass_mono = make_mono(bass)
-    # others_mono = make_mono(others)
+    # accompaniment_mono = make_mono(accompaniment)
+    drums_mono = make_mono(drums)
+    bass_mono = make_mono(bass)
+    others_mono = make_mono(others)
 
     win_length = 8192
 
-    pool = Pool(2)
-
     init = None
+
+    pool = Pool(4)
 
     print("Iteration 0")
     proc_vocals = pool.apply_async(learn_representation,
@@ -331,140 +396,145 @@ def model_train(mus: musdb.DB, n_components: int = 30, n_iter: int = 1, chunk_du
                                    },
                                    callback=results.set_vocals)
 
-    proc_accompaniment = pool.apply_async(learn_representation,
-                                          args=(accompaniment_mono,),
-                                          kwds={
+    # proc_accompaniment = pool.apply_async(learn_representation,
+    #                                       args=(accompaniment_mono,),
+    #                                       kwds={
+    #                                           "init": init,
+    #                                           "win_length": win_length,
+    #                                           "n_components": n_components,
+    #                                           "max_iter": 600
+    #                                       },
+    #                                       callback=results.set_accompaniment)
 
-                                              "init": init,
-                                              "win_length": win_length,
-                                              "n_components": n_components,
-                                              "max_iter": 600
-                                          },
-                                          callback=results.set_accompaniment)
+    proc_drums = pool.apply_async(learn_representation,
+                                  args=(drums_mono,),
+                                  kwds={
+                                      "init": init,
+                                      "win_length": win_length,
+                                      "n_components": n_components,
+                                      "max_iter": 600
+                                  },
+                                  callback=results.set_drums)
 
-    # proc_drums = pool.apply_async(learn_representation,
-    #                               args=(drums_mono,),
-    #                               kwds={
-    #                                   "init": init,
-    #                                   "win_length": win_length,
-    #                                   "n_components": n_components,
-    #                                   "max_iter": 100
-    #                               },
-    #                               callback=results.set_drums)
+    proc_bass = pool.apply_async(learn_representation,
+                                 args=(bass_mono,),
+                                 kwds={
+                                     "init": init,
+                                     "win_length": win_length,
+                                     "n_components": n_components,
+                                     "max_iter": 600
+                                 },
+                                 callback=results.set_bass)
 
-    # proc_bass = pool.apply_async(learn_representation,
-    #                              args=(bass_mono,),
-    #                              kwds={
-    #                                  "init": init,
-    #                                  "win_length": win_length,
-    #                                  "n_components": n_components,
-    #                                  "max_iter": 100
-    #                              },
-    #                              callback=results.set_bass)
-
-    # proc_others = pool.apply_async(learn_representation,
-    #                                args=(others_mono,),
-    #                                kwds={
-    #                                    "init": init,
-    #                                    "win_length": win_length,
-    #                                    "n_components": n_components,
-    #                                    "max_iter": 100
-    #                                },
-    #                                callback=results.set_others)
+    proc_others = pool.apply_async(learn_representation,
+                                   args=(others_mono,),
+                                   kwds={
+                                       "init": init,
+                                       "win_length": win_length,
+                                       "n_components": n_components,
+                                       "max_iter": 600
+                                   },
+                                   callback=results.set_others)
 
     proc_vocals.wait()
-    proc_accompaniment.wait()
-    # proc_drums.wait()
-    # proc_bass.wait()
-    # proc_others.wait()
+    # proc_accompaniment.wait()
+    proc_drums.wait()
+    proc_bass.wait()
+    proc_others.wait()
 
-    init = "custom"
+    # init = "custom"
 
-    for it in range(n_iter - 1):
-        print(f"Iteration {it + 1}")
+    # for it in range(n_iter - 1):
+    #     print(f"Iteration {it + 1}")
 
-        data = next(data_gen)
+    #     data = next(data_gen)
 
-        for batch in range(batch_size - 1):
-            new_data = next(data_gen)
-            stitched_mixture = np.hstack((data[0], new_data[0]))
-            stitched_vocals = np.hstack((data[1], new_data[1]))
-            stitched_accompaniment = np.hstack((data[2], new_data[2]))
-            data = (stitched_mixture, stitched_vocals, stitched_accompaniment, data[-1])
+    #     for batch in range(batch_size - 1):
+    #         new_data = next(data_gen)
+    #         stitched_mixture = np.hstack((data[0], new_data[0]))
+    #         stitched_vocals = np.hstack((data[1], new_data[1]))
+    #         # stitched_accompaniment = np.hstack((data[2], new_data[2]))
+    #         stitched_drums = np.hstack((data[2], new_data[2]))
+    #         stiched_bass = np.hstack((data[3], new_data[3]))
+    #         stitched_others = np.hstack((data[4], new_data[4]))
+    #         # data = (stitched_mixture, stitched_vocals, stitched_accompaniment, data[-1])
+    #         data = (stitched_mixture, stitched_vocals, stitched_drums,
+    #                 stiched_bass, stitched_others, data[-1])
 
-        mixture, vocals, accompaniment, rate = data
+    #     mixture, vocals, drums, bass, others, rate = data
+    #     # mixture, vocals, accompaniment, rate = data
 
-        vocals_mono = make_mono(vocals)
-        accompaniment_mono = make_mono(accompaniment)
-        # drums_mono = make_mono(drums)
-        # bass_mono = make_mono(bass)
-        # others_mono = make_mono(others)
+    #     vocals_mono = make_mono(vocals)
+    #     # accompaniment_mono = make_mono(accompaniment)
+    #     drums_mono = make_mono(drums)
+    #     bass_mono = make_mono(bass)
+    #     others_mono = make_mono(others)
 
-        proc_vocals = pool.apply_async(learn_representation,
-                                       args=(vocals_mono,),
-                                       kwds={
-                                           "W": results.vocals[0] + rng.uniform(0, 1e-3, results.vocals[0].shape),
-                                           "H": results.vocals[1] + rng.uniform(0, 1e-3, results.vocals[1].shape),
-                                           "init": init,
-                                           "win_length": win_length,
-                                           "n_components": results.vocals[0].shape[1],
-                                           "max_iter": 100
-                                       },
-                                       callback=results.set_vocals)
+    #     proc_vocals = pool.apply_async(learn_representation,
+    #                                    args=(vocals_mono,),
+    #                                    kwds={
+    #                                        "W": results.vocals[0] + rng.uniform(0, 1e-3, results.vocals[0].shape),
+    #                                        "H": results.vocals[1] + rng.uniform(0, 1e-3, results.vocals[1].shape),
+    #                                        "init": init,
+    #                                        "win_length": win_length,
+    #                                        "n_components": results.vocals[0].shape[1],
+    #                                        "max_iter": 100
+    #                                    },
+    #                                    callback=results.set_vocals)
 
-        proc_accompaniment = pool.apply_async(learn_representation,
-                                              args=(accompaniment_mono,),
-                                              kwds={
-                                                  "W": results.accompaniment[0] + rng.uniform(0, 1e-3, results.accompaniment[0].shape),
-                                                  "H": results.accompaniment[1] + rng.uniform(0, 1e-3, results.accompaniment[1].shape),
-                                                  "init": init,
-                                                  "win_length": win_length,
-                                                  "n_components": results.accompaniment[0].shape[1],
-                                                  "max_iter": 100
-                                              },
-                                              callback=results.set_accompaniment)
+    #     # proc_accompaniment = pool.apply_async(learn_representation,
+    #     #                                       args=(accompaniment_mono,),
+    #     #                                       kwds={
+    #     #                                           "W": results.accompaniment[0] + rng.uniform(0, 1e-3, results.accompaniment[0].shape),
+    #     #                                           "H": results.accompaniment[1] + rng.uniform(0, 1e-3, results.accompaniment[1].shape),
+    #     #                                           "init": init,
+    #     #                                           "win_length": win_length,
+    #     #                                           "n_components": results.accompaniment[0].shape[1],
+    #     #                                           "max_iter": 100
+    #     #                                       },
+    #     #                                       callback=results.set_accompaniment)
 
-        # proc_drums = pool.apply_async(learn_representation,
-        #                               args=(drums_mono,),
-        #                               kwds={
-        #                                   "W": results.drums[0],
-        #                                   "H": results.drums[1],
-        #                                   "init": init,
-        #                                   "win_length": win_length,
-        #                                   "n_components": (it + 1) * n_components,
-        #                                   "max_iter": 100
-        #                               },
-        #                               callback=results.append_drums)
+    #     proc_drums = pool.apply_async(learn_representation,
+    #                                   args=(drums_mono,),
+    #                                   kwds={
+    #                                       "W": results.drums[0] + rng.uniform(0, 1e-3, results.drums[0].shape),
+    #                                       "H": results.drums[1] + rng.uniform(0, 1e-3, results.drums[1].shape),
+    #                                       "init": init,
+    #                                       "win_length": win_length,
+    #                                       "n_components": results.drums[0].shape[1],
+    #                                       "max_iter": 100
+    #                                   },
+    #                                   callback=results.append_drums)
 
-        # proc_bass = pool.apply_async(learn_representation,
-        #                              args=(bass_mono,),
-        #                              kwds={
-        #                                  "W": results.bass[0],
-        #                                  "H": results.bass[1],
-        #                                  "init": init,
-        #                                  "win_length": win_length,
-        #                                  "n_components": (it + 1) * n_components,
-        #                                  "max_iter": 100
-        #                              },
-        #                              callback=results.append_bass)
+    #     proc_bass = pool.apply_async(learn_representation,
+    #                                  args=(bass_mono,),
+    #                                  kwds={
+    #                                      "W": results.bass[0] + rng.uniform(0, 1e-3, results.bass[0].shape),
+    #                                      "H": results.bass[1] + rng.uniform(0, 1e-3, results.bass[1].shape),
+    #                                      "init": init,
+    #                                      "win_length": win_length,
+    #                                      "n_components": results.bass[0].shape[1],
+    #                                      "max_iter": 100
+    #                                  },
+    #                                  callback=results.append_bass)
 
-        # proc_others = pool.apply_async(learn_representation,
-        #                                args=(others_mono,),
-        #                                kwds={
-        #                                    "W": results.others[0],
-        #                                    "H": results.others[1],
-        #                                    "init": init,
-        #                                    "win_length": win_length,
-        #                                    "n_components": (it + 1) * n_components,
-        #                                    "max_iter": 100
-        #                                },
-        #                                callback=results.append_others)
+    #     proc_others = pool.apply_async(learn_representation,
+    #                                    args=(others_mono,),
+    #                                    kwds={
+    #                                        "W": results.others[0] + rng.uniform(0, 1e-3, results.others[0].shape),
+    #                                        "H": results.others[1] + rng.uniform(0, 1e-3, results.others[1].shape),
+    #                                        "init": init,
+    #                                        "win_length": win_length,
+    #                                        "n_components": results.others[0].shape[1],
+    #                                        "max_iter": 100
+    #                                    },
+    #                                    callback=results.append_others)
 
-        proc_vocals.wait()
-        proc_accompaniment.wait()
-        # proc_drums.wait()
-        # proc_bass.wait()
-        # proc_others.wait()
+    #     proc_vocals.wait()
+    #     # proc_accompaniment.wait()
+    #     proc_drums.wait()
+    #     proc_bass.wait()
+    #     proc_others.wait()
 
     pool.close()
     pool.join()
@@ -484,24 +554,24 @@ def model_separate(components: NMFResults, mixture: np.ndarray) -> Dict:
         mixture_R, win_length=win_length)
 
     vocals_components = components.vocals[0]
-    accompaniment_components = components.accompaniment[0]
-    # drums_components = components.drums[0]
-    # bass_components = components.bass[0]
-    # others_components = components.others[0]
+    # accompaniment_components = components.accompaniment[0]
+    drums_components = components.drums[0]
+    bass_components = components.bass[0]
+    others_components = components.others[0]
 
     n_vocals_components = vocals_components.shape[1]
-    n_accompaniment_components = accompaniment_components.shape[1]
-    # n_drums_components = drums_components.shape[1]
-    # n_bass_components = bass_components.shape[1]
-    # n_others_components = others_components.shape[1]
+    # n_accompaniment_components = accompaniment_components.shape[1]
+    n_drums_components = drums_components.shape[1]
+    n_bass_components = bass_components.shape[1]
+    n_others_components = others_components.shape[1]
 
     mixture_components = np.hstack(
         (
             vocals_components,
-            # drums_components,
-            # bass_components,
-            # others_components
-            accompaniment_components
+            drums_components,
+            bass_components,
+            others_components
+            # accompaniment_components
         )
     )
 
@@ -512,6 +582,8 @@ def model_separate(components: NMFResults, mixture: np.ndarray) -> Dict:
         update_H=False,
         solver="mu",
         max_iter=600,
+        l1_ratio=1.0,
+        alpha=0.1,
         beta_loss="kullback-leibler"
     )
     mixture_weights_L = mixture_weights_LT.T
@@ -523,33 +595,35 @@ def model_separate(components: NMFResults, mixture: np.ndarray) -> Dict:
         update_H=False,
         solver="mu",
         max_iter=600,
+        l1_ratio=1.0,
+        alpha=0.1,
         beta_loss="kullback-leibler"
     )
     mixture_weights_R = mixture_weights_RT.T
 
     # mixture_weights_L = orthogonal_mp(
-    #     mixture_mags_L, mixture_components, n_nonzero_coefs=(mixture_components.shape[1] / 4))
+    #     mixture_components, mixture_mags_L, n_nonzero_coefs=(mixture_components.shape[1] // 4))
     # mixture_weights_R = orthogonal_mp(
-    #     mixture_mags_R, mixture_components, n_nonzero_coefs=(mixture_components.shape[1] / 4))
+    #     mixture_components, mixture_mags_R, n_nonzero_coefs=(mixture_components.shape[1] // 4))
 
     zero = 0
     one = zero + n_vocals_components
-    two = one + n_accompaniment_components
-    # two = one + n_drums_components
-    # three = two + n_bass_components
-    # four = three + n_others_components
+    # two = one + n_accompaniment_components
+    two = one + n_drums_components
+    three = two + n_bass_components
+    four = three + n_others_components
 
     learned_vocals_weights_L = mixture_weights_L[zero:one, :]
-    learned_accompaniment_weights_L = mixture_weights_L[one:two, :]
-    # learned_drums_weights_L = mixture_weights_L[one:two, :]
-    # learned_bass_weights_L = mixture_weights_L[two:three, :]
-    # learned_others_weights_L = mixture_weights_L[three:four, :]
+    # learned_accompaniment_weights_L = mixture_weights_L[one:two, :]
+    learned_drums_weights_L = mixture_weights_L[one:two, :]
+    learned_bass_weights_L = mixture_weights_L[two:three, :]
+    learned_others_weights_L = mixture_weights_L[three:four, :]
 
     learned_vocals_weights_R = mixture_weights_R[zero:one, :]
-    learned_accompaniment_weights_R = mixture_weights_R[one:two, :]
-    # learned_drums_weights_R = mixture_weights_R[one:two, :]
-    # learned_bass_weights_R = mixture_weights_R[two:three, :]
-    # learned_others_weights_R = mixture_weights_R[three:four, :]
+    # learned_accompaniment_weights_R = mixture_weights_R[one:two, :]
+    learned_drums_weights_R = mixture_weights_R[one:two, :]
+    learned_bass_weights_R = mixture_weights_R[two:three, :]
+    learned_others_weights_R = mixture_weights_R[three:four, :]
 
     reconstruct_L = partial(reconstruct_audio,
                             phases=mixture_phases_L,
@@ -560,30 +634,53 @@ def model_separate(components: NMFResults, mixture: np.ndarray) -> Dict:
 
     learned_vocals_L = reconstruct_L(
         vocals_components, learned_vocals_weights_L)
-    learned_accompaniment_L = reconstruct_L(
-        accompaniment_components, learned_accompaniment_weights_L)
-    # learned_drums_L = reconstruct_L(drums_components, learned_drums_weights_L)
-    # learned_bass_L = reconstruct_L(bass_components, learned_bass_weights_L)
-    # learned_others_L = reconstruct_L(
-    #     others_components, learned_others_weights_L)
+    # learned_accompaniment_L = reconstruct_L(
+    #     accompaniment_components, learned_accompaniment_weights_L)
+    learned_drums_L = reconstruct_L(drums_components, learned_drums_weights_L)
+    learned_bass_L = reconstruct_L(bass_components, learned_bass_weights_L)
+    learned_others_L = reconstruct_L(
+        others_components, learned_others_weights_L)
 
     learned_vocals_R = reconstruct_R(
         vocals_components, learned_vocals_weights_R)
-    learned_accompaniment_R = reconstruct_R(
-        accompaniment_components, learned_accompaniment_weights_R)
-    # learned_drums_R = reconstruct_R(drums_components, learned_drums_weights_R)
-    # learned_bass_R = reconstruct_R(bass_components, learned_bass_weights_R)
-    # learned_others_R = reconstruct_R(
-    #     others_components, learned_others_weights_R)
+    # learned_accompaniment_R = reconstruct_R(
+    #     accompaniment_components, learned_accompaniment_weights_R)
+    learned_drums_R = reconstruct_R(drums_components, learned_drums_weights_R)
+    learned_bass_R = reconstruct_R(bass_components, learned_bass_weights_R)
+    learned_others_R = reconstruct_R(
+        others_components, learned_others_weights_R)
 
     learned_vocals = np.vstack((learned_vocals_L, learned_vocals_R)).T
-    learned_accompaniment = np.vstack(
-        (learned_accompaniment_L, learned_accompaniment_R)).T
-    # learned_drums = np.vstack((learned_drums_L, learned_drums_R)).T
-    # learned_bass = np.vstack((learned_bass_L, learned_bass_R)).T
-    # learned_others = np.vstack((learned_others_L, learned_others_R)).T
+    # learned_accompaniment = np.vstack(
+    #     (learned_accompaniment_L, learned_accompaniment_R)).T
+    learned_drums = np.vstack((learned_drums_L, learned_drums_R)).T
+    learned_bass = np.vstack((learned_bass_L, learned_bass_R)).T
+    learned_others = np.vstack((learned_others_L, learned_others_R)).T
 
-    return learned_vocals, learned_accompaniment
+    # return learned_vocals, learned_accompaniment
+    return learned_vocals, learned_drums, learned_bass, learned_others
+
+
+def model_separate_and_evaluate(components: NMFResults, track: musdb.MultiTrack, evaldir):
+    mixture = track.audio
+
+    print("Separating")
+    separated_sources = model_separate(components, mixture)
+    estimates = {
+        "vocals": separated_sources[0],
+        "drums": separated_sources[1],
+        "bass": separated_sources[2],
+        "other": separated_sources[3]
+        # "accompaniment": separated_sources[1]
+    }
+
+    print("Evaluating")
+    scores = museval.eval_mus_track(track, estimates, output_dir=evaldir)
+
+    print(scores)
+    print("Done")
+
+    return separated_sources, scores
 
 
 def model_test(components: NMFResults, mus: musdb.DB):
