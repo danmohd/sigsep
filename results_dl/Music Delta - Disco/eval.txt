@@ -1,0 +1,4 @@
+vocals          ==> SDR:   1.479  SIR:  14.312  ISR:   2.829  SAR:  -1.908  
+drums           ==> SDR:   2.752  SIR:  15.853  ISR:   5.543  SAR:   3.179  
+bass            ==> SDR:   2.382  SIR:  10.964  ISR:   8.757  SAR:   1.487  
+other           ==> SDR:  -0.618  SIR:   2.600  ISR:   3.138  SAR:  -3.857  
