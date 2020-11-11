@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     data_gen = generate_four_stem_data_batch(mus_train, batch_size=10, chunk_duration_train=30.0, chunk_duration_test=15.0)
 
-    components, data = model_train(data_gen, n_components=200, batch_size=10)
+    components, data = model_train(data_gen, n_components=100, batch_size=10)
 
     data = next(data_gen)
 
