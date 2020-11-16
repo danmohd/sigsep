@@ -1,4 +1,6 @@
 *.wav
 .vscode/**
 results/**
+results_dl/**
 **/*.ini
+**/eval/**

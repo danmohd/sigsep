@@ -386,6 +386,7 @@ def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 1
     pool = Pool(4)
 
     print("Iteration 0")
+    print("Starting Vocals")
     proc_vocals = pool.apply_async(learn_representation,
                                    args=(vocals_mono,),
                                    kwds={
@@ -406,6 +407,7 @@ def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 1
     #                                       },
     #                                       callback=results.set_accompaniment)
 
+    print("Starting Drums")
     proc_drums = pool.apply_async(learn_representation,
                                   args=(drums_mono,),
                                   kwds={
@@ -416,6 +418,7 @@ def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 1
                                   },
                                   callback=results.set_drums)
 
+    print("Starting Bass")
     proc_bass = pool.apply_async(learn_representation,
                                  args=(bass_mono,),
                                  kwds={
@@ -426,6 +429,7 @@ def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 1
                                  },
                                  callback=results.set_bass)
 
+    print("Starting Others")
     proc_others = pool.apply_async(learn_representation,
                                    args=(others_mono,),
                                    kwds={
