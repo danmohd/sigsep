@@ -2,5 +2,6 @@
 .vscode/**
 results/**
 results_dl/**
+results_pidl/**
 **/*.ini
 **/eval/**

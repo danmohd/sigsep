@@ -13,13 +13,15 @@ if __name__ == "__main__":
 
     mus_train = musdb.DB(root=root, is_wav=True, subsets="train")
 
-    data_gen = generate_four_stem_data_batch(mus_train, batch_size=10, chunk_duration_train=30.0, chunk_duration_test=15.0)
+    batch_size = 5
 
-    components, data = model_train(data_gen, n_components=20, batch_size=10)
+    data_gen = generate_four_stem_data_batch(mus_train, batch_size=batch_size, chunk_duration_train=10.0, chunk_duration_test=10.0)
+
+    components, data = model_train(data_gen, win_length=512, n_components=20, batch_size=batch_size, n_iter=20)
 
     data = next(data_gen)
 
-    separations, scores = model_separate_and_evaluate(components, data, evaldir)
+    separations, scores = model_separate_and_evaluate(components, data, evaldir, n_nonzero_coeffs=40)
 
     mixture = data.audio
     vocals = data.targets["vocals"].audio
@@ -53,5 +55,6 @@ if __name__ == "__main__":
     write(results_path / "learned_bass.wav", learned_bass, rate)
     write(results_path / "learned_others.wav", learned_others, rate)
 
-    with open(results_path / "eval.txt", "w") as file:
-        file.write(repr(scores))
+    if scores is not None:
+        with open(results_path / "eval.txt", "w") as file:
+            file.write(repr(scores))

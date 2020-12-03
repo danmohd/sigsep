@@ -9,8 +9,10 @@ import numpy as np
 import musdb
 import museval
 import random
+from sklearn.preprocessing import normalize
 from sklearn.decomposition import DictionaryLearning
 from sklearn.linear_model import OrthogonalMatchingPursuit
+from multiprocessing import Pool
 
 from typing import List, Dict, Tuple, Generator
 
@@ -81,7 +83,8 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
     Fstar = np.conj(np.transpose(F))
 
     # model = OrthogonalMatchingPursuit(fit_intercept=False, precompute=True)
-    model = OrthogonalMatchingPursuit(n_nonzero_coefs=n_components, fit_intercept=False, precompute=True)
+    model = OrthogonalMatchingPursuit(
+        n_nonzero_coefs=n_components, fit_intercept=False, precompute=True)
 
     for it in range(n_iter):
         print(f"Iteration: {it}")
@@ -89,17 +92,20 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
         # Compute Gram
         Lstar = np.fft.irfft(np.diag(np.conj(L[:, 0])), axis=0, norm="ortho")
         for i in range(1, n_components):
-            Lstar = np.vstack((Lstar, np.fft.irfft(np.diag(np.conj(L[:, i])), axis=0, norm="ortho")))
+            Lstar = np.vstack((Lstar, np.fft.irfft(
+                np.diag(np.conj(L[:, i])), axis=0, norm="ortho")))
 
         G = Lstar @ np.conj(np.transpose(Lstar))
         # G = np.real(G)
 
         # Compute Inner products
         Lambda = L[:, 0]
-        DTy = np.fft.irfft(np.conj(Lambda[:, np.newaxis]) * np.fft.rfft(Y, axis=0, norm="ortho"), axis=0, norm="ortho")
+        DTy = np.fft.irfft(np.conj(
+            Lambda[:, np.newaxis]) * np.fft.rfft(Y, axis=0, norm="ortho"), axis=0, norm="ortho")
         for i in range(1, n_components):
             Lambda = L[:, i]
-            DTy = np.vstack((DTy, np.fft.irfft(np.conj(Lambda[:, np.newaxis]) * np.fft.rfft(Y, axis=0, norm="ortho"), axis=0, norm="ortho")))
+            DTy = np.vstack((DTy, np.fft.irfft(np.conj(
+                Lambda[:, np.newaxis]) * np.fft.rfft(Y, axis=0, norm="ortho"), axis=0, norm="ortho")))
 
         # DTy = np.real(DTy)
 
@@ -116,20 +122,24 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
             Zl = np.fft.rfft(Y, axis=0, norm="ortho")
             for otherblock in range(n_components):
                 if otherblock != block:
-                    Zl -= np.diag(L[:, otherblock]) @ np.fft.rfft(X[N * otherblock: N * (otherblock + 1), :], axis=0, norm="ortho")
+                    Zl -= np.diag(L[:, otherblock]) @ np.fft.rfft(
+                        X[N * otherblock: N * (otherblock + 1), :], axis=0, norm="ortho")
 
             # Do lambda-wise update for each row in Zl
-            FXl = np.conj(np.fft.rfft(X[N * block: N * (block + 1), :], axis=0, norm="ortho"))
+            FXl = np.conj(np.fft.rfft(
+                X[N * block: N * (block + 1), :], axis=0, norm="ortho"))
             for row in range(Zl.shape[0]):
                 FXli = FXl[row, :]  # shape (
                 Zli = Zl[row, :]
-                L[row, block] = Zli @ FXli / (1e-16 + np.linalg.norm(FXli) ** 2)
+                L[row, block] = Zli @ FXli / \
+                    (1e-16 + np.linalg.norm(FXli) ** 2)
 
     Lambda = L[:, 0]
-    D = np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho") 
+    D = np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
     for i in range(1, n_components):
         Lambda = L[:, i]
-        D = np.hstack((D, np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
+        D = np.hstack(
+            (D, np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
 
     return D
 
@@ -149,23 +159,25 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     # F = F @ I / sqrt(N)
     # divide by sqrt(N) so that Fstar @ F = I
     F = np.fft.fft(I, axis=0, norm="ortho")
-    Fstar = np.conj(np.transpose(F))
 
-    model = OrthogonalMatchingPursuit(n_nonzero_coefs=n_components, fit_intercept=False)
+    model = OrthogonalMatchingPursuit(
+        n_nonzero_coefs=n_components, fit_intercept=False)
 
     for it in range(n_iter):
         print(f"Iteration: {it}")
         # Construct full dictionary
         # D = Fstar @ (np.diag(L[:, 0]) @ F)
-        # D = np.fft.ifft(np.diag(L[:, 0]) @ F, axis=0, norm="ortho") 
+        # D = np.fft.ifft(np.diag(L[:, 0]) @ F, axis=0, norm="ortho")
         Lambda = L[:, 0]
-        D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho") 
+        D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
         for i in range(1, n_components):
             # D = np.hstack((D, Fstar @ np.diag(L[:, i]) @ F))
             # D = np.hstack((D, np.fft.ifft(np.diag(L[:, i]) @ F, axis=0, norm="ortho")))
             Lambda = L[:, i]
-            D = np.hstack((D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
+            D = np.hstack(
+                (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
         D = np.real(D)
+        D = normalize(D, norm="l2", axis=0)
 
         # Sparse Update
         print(f"Iteration: {it}, Sparse Update")
@@ -180,19 +192,26 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
             Zl = np.fft.fft(Y, axis=0, norm="ortho")
             for otherblock in range(n_components):
                 if otherblock != block:
-                    Zl -= np.diag(L[:, otherblock]) @ np.fft.fft(X[N * otherblock: N * (otherblock + 1), :], axis=0, norm="ortho")
+                    Zl -= np.diag(L[:, otherblock]) @ np.fft.fft(
+                        X[N * otherblock: N * (otherblock + 1), :], axis=0, norm="ortho")
 
             # Do lambda-wise update for each row in Zl
-            FXl = np.conj(np.fft.fft(X[N * block: N * (block + 1), :], axis=0, norm="ortho"))
+            FXl = np.conj(np.fft.fft(
+                X[N * block: N * (block + 1), :], axis=0, norm="ortho"))
             for row in range(Zl.shape[0]):
                 FXli = FXl[row, :]  # shape (
                 Zli = Zl[row, :]
-                L[row, block] = Zli @ FXli / (1e-16 + np.linalg.norm(FXli) ** 2)
+                L[row, block] = Zli @ FXli / \
+                    (1e-16 + np.linalg.norm(FXli) ** 2)
 
-    D = Fstar @ np.diag(L[:, 0]) @ F  # for the first iteration
+    Lambda = L[:, 0]
+    D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
     for i in range(1, n_components):
-        D = np.hstack((D, Fstar @ np.diag(L[:, i]) @ F))
+        Lambda = L[:, i]
+        D = np.hstack(
+            (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
     D = np.real(D)
+    D = normalize(D, norm="l2", axis=0)
 
     return D
 
@@ -211,8 +230,32 @@ def stitch_audio(batch: List[Tuple]) -> Tuple:
     return tuple(stitched_data)
 
 
+class PIDLResults:
+    def __init__(self):
+        self.vocals = None
+        self.drums = None
+        self.bass = None
+        self.others = None
+
+    def set_vocals(self, components):
+        print("Set Vocals")
+        self.vocals = components
+
+    def set_drums(self, components):
+        print("Set Drums")
+        self.drums = components
+
+    def set_bass(self, components):
+        print("Set Bass")
+        self.bass = components
+
+    def set_others(self, components):
+        print("Set Others")
+        self.others = components
+
+
 # TODO: Change to PI-DL
-def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 10):
+def model_train(data_gen: Generator, win_length: int = 64, n_components: int = 30, batch_size: int = 1, n_iter=5):
     data_batches = [next(data_gen) for i in range(batch_size)]
     data = stitch_audio(data_batches)
 
@@ -225,46 +268,92 @@ def model_train(data_gen: Generator, n_components: int = 30, batch_size: int = 1
     bass_mono = make_mono(bass)
     others_mono = make_mono(others)
 
-    win_length = 128
-
     vocals_features = get_features(vocals_mono, win_length)
     drums_features = get_features(drums_mono, win_length)
     bass_features = get_features(bass_mono, win_length)
     others_features = get_features(others_mono, win_length)
 
+    results = PIDLResults()
+    pool = Pool(processes=4)
+
     print("Starting Vocals")
-    vocals_components = learn_dictionary(
-        vocals_features, n_components=n_components, n_iter=5)
-    print("Finished Vocals")
+    pool.apply_async(learn_dictionary,
+                     args=(vocals_features,),
+                     kwds={
+                         "n_components": n_components,
+                         "n_iter": n_iter
+                     },
+                     callback=results.set_vocals)
+
     print("Starting Drums")
-    drums_components = learn_dictionary(
-        drums_features, n_components=n_components, n_iter=5)
-    print("Finished Drums")
+    pool.apply_async(learn_dictionary,
+                     args=(drums_features,),
+                     kwds={
+                         "n_components": n_components,
+                         "n_iter": n_iter
+                     },
+                     callback=results.set_drums)
+
     print("Starting Bass")
-    bass_components = learn_dictionary(
-        bass_features, n_components=n_components, n_iter=5)
-    print("Finished Bass")
+    pool.apply_async(learn_dictionary,
+                     args=(bass_features,),
+                     kwds={
+                         "n_components": n_components,
+                         "n_iter": n_iter
+                     },
+                     callback=results.set_bass)
+
     print("Starting Others")
-    others_components = learn_dictionary(
-        others_features, n_components=n_components, n_iter=5)
-    print("Finished Others")
+    pool.apply_async(learn_dictionary,
+                     args=(others_features,),
+                     kwds={
+                         "n_components": n_components,
+                         "n_iter": n_iter
+                     },
+                     callback=results.set_others)
+
+    pool.close()
+    pool.join()
+
+    vocals_components = results.vocals
+    drums_components = results.drums
+    bass_components = results.bass
+    others_components = results.others
+
+    # print("Starting Vocals")
+    # vocals_components = learn_dictionary(
+    #     vocals_features, n_components=n_components, n_iter=n_iter)
+    # print("Finished Vocals")
+    # print("Starting Drums")
+    # drums_components = learn_dictionary(
+    #     drums_features, n_components=n_components, n_iter=n_iter)
+    # print("Finished Drums")
+    # print("Starting Bass")
+    # bass_components = learn_dictionary(
+    #     bass_features, n_components=n_components, n_iter=n_iter)
+    # print("Finished Bass")
+    # print("Starting Others")
+    # others_components = learn_dictionary(
+    #     others_features, n_components=n_components, n_iter=n_iter)
+    # print("Finished Others")
 
     results = {
         "vocals": vocals_components,
         "drums": drums_components,
         "bass": bass_components,
-        "others": others_components
+        "others": others_components,
+        "win_length": win_length
     }
 
     return results, data
 
 
 # TODO: Change to PI-DL
-def model_separate(components: Dict, mixture: np.ndarray) -> Dict:
+def model_separate(components: Dict, mixture: np.ndarray, n_nonzero_coeffs: int = 40) -> Dict:
     mixture_L = np.ascontiguousarray(mixture[:, 0])
     mixture_R = np.ascontiguousarray(mixture[:, 1])
 
-    win_length = 128
+    win_length = components["win_length"]
 
     mixture_L_features = get_features(mixture_L, win_length)
     mixture_R_features = get_features(mixture_R, win_length)
@@ -291,9 +380,10 @@ def model_separate(components: Dict, mixture: np.ndarray) -> Dict:
         )
     )
 
-    n_mixture_components = n_vocals_components + n_drums_components + n_bass_components + n_others_components
+    n_mixture_components = n_vocals_components + \
+        n_drums_components + n_bass_components + n_others_components
 
-    model = OrthogonalMatchingPursuit(n_nonzero_coefs=40, fit_intercept=False).fit(
+    model = OrthogonalMatchingPursuit(n_nonzero_coefs=n_nonzero_coeffs, fit_intercept=False).fit(
         mixture_components, mixture_L_features)
     mixture_weights_L = model.coef_.T
     model = model.fit(mixture_components, mixture_R_features)
@@ -348,11 +438,11 @@ def model_separate(components: Dict, mixture: np.ndarray) -> Dict:
 
 
 # TODO: Change to PI-DL.
-def model_separate_and_evaluate(components: Dict, track: musdb.MultiTrack, evaldir):
+def model_separate_and_evaluate(components: Dict, track: musdb.MultiTrack, evaldir, n_nonzero_coeffs: int = 40):
     mixture = track.audio
 
     print("Separating")
-    separated_sources = model_separate(components, mixture)
+    separated_sources = model_separate(components, mixture, n_nonzero_coeffs=n_nonzero_coeffs)
     estimates = {
         "vocals": separated_sources[0],
         "drums": separated_sources[1],
@@ -361,10 +451,17 @@ def model_separate_and_evaluate(components: Dict, track: musdb.MultiTrack, evald
         # "accompaniment": separated_sources[1]
     }
 
-    print("Evaluating")
-    scores = museval.eval_mus_track(track, estimates, output_dir=evaldir)
+    scores = None
 
-    print(scores)
-    print("Done")
+    try:
+        print("Evaluating")
+        scores = museval.eval_mus_track(track, estimates, output_dir=evaldir)
+
+        print(scores)
+        print("Done")
+    except ValueError as e:
+        pass
+    else:
+        print("Evaluation Success")
 
     return separated_sources, scores
