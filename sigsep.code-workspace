@@ -7,5 +7,7 @@
 			"path": "..\\musdb18hq"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"jupyter.jupyterServerType": "local"
+	}
 }

@@ -152,6 +152,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     rng = np.random.default_rng()
     L = rng.uniform(low=-1, high=1, size=(Y.shape[0], n_components))
     L = 0.5 * (L + np.flipud(L))
+    Lnorm = np.linalg.norm(L, ord=2, axis=0)
+    L = L / Lnorm
 
     # Dimension of data (fft size) or Number of features
     N = Y.shape[0]
@@ -178,14 +180,14 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
                 (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
         D = np.real(D)
 
-        D_norm = np.linalg.norm(D, ord=2, axis=0)
-        D = D / D_norm
+        # D_norm = np.linalg.norm(D, ord=2, axis=0)
+        # D = D / D_norm
 
         # Sparse Update
         print(f"Iteration: {it}, Sparse Update")
         model.fit(D, Y)
         X = model.coef_.T
-        X = X * D_norm[:, np.newaxis]
+        # X = X * D_norm[:, np.newaxis]
 
         # Dictionary update
         # Do Blockwise update
@@ -206,6 +208,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
                 Zli = Zl[row, :]
                 L[row, block] = Zli @ FXli / \
                     (1e-16 + np.linalg.norm(FXli) ** 2)
+        Lnorm = np.linalg.norm(L, ord=2, axis=0)
+        L = L / Lnorm
 
     Lambda = L[:, 0]
     D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
@@ -214,7 +218,7 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
         D = np.hstack(
             (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
     D = np.real(D)
-    D = normalize(D, norm="l2", axis=0)
+    # D = normalize(D, norm="l2", axis=0)
 
     return D
 
