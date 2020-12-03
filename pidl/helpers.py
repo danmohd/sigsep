@@ -177,12 +177,15 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
             D = np.hstack(
                 (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
         D = np.real(D)
-        D = normalize(D, norm="l2", axis=0)
+
+        D_norm = np.linalg.norm(D, ord=2, axis=0)
+        D = D / D_norm
 
         # Sparse Update
         print(f"Iteration: {it}, Sparse Update")
         model.fit(D, Y)
         X = model.coef_.T
+        X = X * D_norm[:, np.newaxis]
 
         # Dictionary update
         # Do Blockwise update
