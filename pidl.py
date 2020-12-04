@@ -4,20 +4,22 @@ from pidl.helpers import generate_four_stem_data_batch, model_train, model_separ
 from os import mkdir
 from soundfile import write
 import joblib
+import numpy as np
 
 
 if __name__ == "__main__":
+    # np.seterr(all="raise")
     root = Path("..", "musdb18hq")
     results_path = Path(".", "results_pidl")
     evaldir = results_path / "eval"
 
     mus_train = musdb.DB(root=root, is_wav=True, subsets="train")
 
-    batch_size = 10
+    batch_size = 5
 
-    data_gen = generate_four_stem_data_batch(mus_train, batch_size=batch_size, chunk_duration_train=30.0, chunk_duration_test=15.0)
+    data_gen = generate_four_stem_data_batch(mus_train, batch_size=batch_size, chunk_duration_train=10.0, chunk_duration_test=15.0)
 
-    components, data = model_train(data_gen, win_length=512, n_components=30, batch_size=batch_size, n_iter=20)
+    components, data = model_train(data_gen, win_length=512, n_components=20, batch_size=batch_size, n_iter=20)
 
     data = next(data_gen)
 
