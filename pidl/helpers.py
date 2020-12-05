@@ -153,6 +153,7 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     rng = np.random.default_rng()
     L = rng.uniform(low=0.1, high=1, size=(Y.shape[0], n_components))
     L = 0.5 * (L + np.flipud(L))
+    L = L.astype(np.csingle)
     # Lnorm = np.linalg.norm(L, ord=2, axis=0)
     # L = L / Lnorm
 
