@@ -15,11 +15,11 @@ if __name__ == "__main__":
 
     mus_train = musdb.DB(root=root, is_wav=True, subsets="train")
 
-    batch_size = 5
+    batch_size = 10
 
     data_gen = generate_four_stem_data_batch(mus_train, batch_size=batch_size, chunk_duration_train=10.0, chunk_duration_test=10.0)
 
-    components, data = model_train(data_gen, win_length=512, n_components=20, batch_size=batch_size, n_iter=20)
+    components, data = model_train(data_gen, win_length=512, n_components=10, batch_size=batch_size, n_iter=20)
 
     data = next(data_gen)
 
