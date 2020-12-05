@@ -146,11 +146,12 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
 
 def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     # Y
-    Y = data
+    Y, Y_norm = normalize(data, norm="l2", axis=0, return_norm=True)
+    Y = Y[:, Y_norm >= np.finfo(Y.dtype).eps]
     # initial lambdas, (N, n_components)
     # L = np.ones((Y.shape[0], n_components))
     rng = np.random.default_rng()
-    L = rng.uniform(low=-1, high=1, size=(Y.shape[0], n_components))
+    L = rng.uniform(low=0.1, high=1, size=(Y.shape[0], n_components))
     L = 0.5 * (L + np.flipud(L))
     # Lnorm = np.linalg.norm(L, ord=2, axis=0)
     # L = L / Lnorm
@@ -162,8 +163,10 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     # divide by sqrt(N) so that Fstar @ F = I
     F = np.fft.fft(I, axis=0, norm="ortho")
 
-    model = OrthogonalMatchingPursuit(
-        n_nonzero_coefs=n_components, fit_intercept=False)
+    n_columns = N * n_components
+
+    # model = OrthogonalMatchingPursuit(tol=1e-1, fit_intercept=False)
+    model = OrthogonalMatchingPursuit(n_nonzero_coefs=int(0.002 * n_columns), fit_intercept=False)
 
     for it in range(n_iter):
         print(f"Iteration: {it}")
@@ -190,6 +193,7 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
 
         # Dictionary update
         # Do Blockwise update
+        newL = np.zeros_like(L)
         print(f"Iteration: {it}, Blockwise Update")
         for block in range(n_components):
             print(f"Iteration: {it}, Block: {block}")
@@ -208,10 +212,11 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
             for row in range(Zl.shape[0]):
                 FXli = FXl[row, :]  # shape (
                 Zli = Zl[row, :]
-                L[row, block] = Zli @ FXli / \
+                newL[row, block] = Zli @ FXli / \
                     (1e-16 + np.linalg.norm(FXli) ** 2)
         # Lnorm = np.linalg.norm(L, ord=2, axis=0)
         # L = L / Lnorm
+        L = newL
 
     Lambda = L[:, 0]
     D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
