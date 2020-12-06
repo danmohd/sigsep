@@ -28,7 +28,7 @@ def generate_four_stem_data_batch(
         track = random.choice(mus.tracks)
         for batch in range(batch_size):
             track.chunk_duration = chunk_duration_train
-            track.chuck_start = random.uniform(
+            track.chunk_start = random.uniform(
                 0, track.duration - track.chunk_duration)
 
             mixture = track.audio
@@ -37,6 +37,30 @@ def generate_four_stem_data_batch(
             bass = track.targets["bass"].audio
             others = track.targets["other"].audio
             rate = track.rate
+
+            silence_flag = (np.all(mixture == 0) or
+                            np.all(vocals == 0) or
+                            np.all(drums == 0) or
+                            np.all(bass == 0) or
+                            np.all(others == 0))
+
+            while silence_flag is True:
+                track.chunk_start = random.uniform(
+                    0, track.duration - track.chunk_duration
+                )
+
+                mixture = track.audio
+                vocals = track.targets["vocals"].audio
+                drums = track.targets["drums"].audio
+                bass = track.targets["bass"].audio
+                others = track.targets["other"].audio
+                rate = track.rate
+
+                silence_flag = (np.all(mixture == 0) or
+                                np.all(vocals == 0) or
+                                np.all(drums == 0) or
+                                np.all(bass == 0) or
+                                np.all(others == 0))
 
             yield mixture, vocals, drums, bass, others, rate
 

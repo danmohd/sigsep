@@ -119,7 +119,7 @@ def generate_four_stem_data_batch(mus: musdb.DB, batch_size: int = 10, chunk_dur
         track = random.choice(mus.tracks)
         for batch in range(batch_size):
             track.chunk_duration = chunk_duration_train
-            track.chuck_start = random.uniform(
+            track.chunk_start = random.uniform(
                 0, track.duration - track.chunk_duration
             )
 
