@@ -13,6 +13,7 @@ from sklearn.preprocessing import normalize
 from sklearn.decomposition import DictionaryLearning
 from sklearn.linear_model import OrthogonalMatchingPursuit
 from multiprocessing import Pool
+from copy import copy
 
 from typing import List, Dict, Tuple, Generator
 
@@ -27,7 +28,8 @@ def generate_four_stem_data_batch(
         track = random.choice(mus.tracks)
         for batch in range(batch_size):
             track.chunk_duration = chunk_duration_train
-            track.chuck_start = random.uniform(0, track.duration - track.chunk_duration)
+            track.chuck_start = random.uniform(
+                0, track.duration - track.chunk_duration)
 
             mixture = track.audio
             vocals = track.targets["vocals"].audio
@@ -39,7 +41,8 @@ def generate_four_stem_data_batch(
             yield mixture, vocals, drums, bass, others, rate
 
         track.chunk_duration = chunk_duration_test
-        track.chunk_start = random.uniform(0, track.duration - track.chunk_duration)
+        track.chunk_start = random.uniform(
+            0, track.duration - track.chunk_duration)
 
         yield track
 
@@ -71,51 +74,82 @@ def get_features(audio: np.ndarray, n_features: int):
 def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int):
     # Y
     Y = data
+    Y_norm = np.linalg.norm(Y, axis=0, ord=2)
+    Y = Y[:, Y_norm >= np.finfo(Y.dtype).eps]
     # initial lambdas, (N, n_components)
     # L = np.ones((Y.shape[0], n_components))
     rng = np.random.default_rng()
-    L = rng.uniform(low=-1, high=1, size=(Y.shape[0] // 2 + 1, n_components))
-    L = 0.5 * (L + np.flipud(L))
+    L = rng.uniform(
+        low=-1, high=1, size=(Y.shape[0] // 2 + 1, n_components)).astype(np.complex128)
+    # L = 0.5 * (L + np.flipud(L))
 
     # Dimension of data (fft size) or Number of features
     N = Y.shape[0]
     I = np.eye(N)
     F = np.fft.rfft(I, axis=0, norm="ortho")
-    Fstar = np.conj(np.transpose(F))
 
     # model = OrthogonalMatchingPursuit(fit_intercept=False, precompute=True)
     model = OrthogonalMatchingPursuit(
         n_nonzero_coefs=n_components, fit_intercept=False, precompute=True
     )
 
+    FY = np.fft.rfft(Y, axis=0, norm="ortho")
+
     for it in range(n_iter):
         print(f"Iteration: {it}")
 
         # Compute Gram
-        Lstar = np.fft.irfft(np.diag(np.conj(L[:, 0])), axis=0, norm="ortho")
-        for i in range(1, n_components):
-            Lstar = np.vstack(
-                (Lstar, np.fft.irfft(np.diag(np.conj(L[:, i])), axis=0, norm="ortho"))
-            )
+        # Lstar = np.fft.irfft(np.diag(np.conj(L[:, 0])), axis=0, norm="ortho")
+        # for i in range(1, n_components):
+        #     Lstar = np.vstack(
+        #         (Lstar, np.fft.irfft(np.diag(np.conj(L[:, i])), axis=0, norm="ortho"))
+        #     )
 
-        G = Lstar @ np.conj(np.transpose(Lstar))
+        # G = Lstar @ np.conj(np.transpose(Lstar))
         # G = np.real(G)
 
-        # Compute Inner products
+        # Compute Gram
         Lambda = L[:, 0]
+        Gr = Lambda[:, np.newaxis] * F
+        for i in range(1, n_components):
+            Lambda = L[:, i]
+            Gr = np.hstack(
+                (
+                    Gr,
+                    Lambda[:, np.newaxis] * F
+                )
+            )
+
+        Lconj = np.conj(L)
+        Lambda = Lconj[:, 0]
+        G = np.fft.irfft(Lambda[:, np.newaxis] * Gr,
+                         axis=0,
+                         norm="ortho")
+        for i in range(1, n_components):
+            Lambda = Lconj[:, i]
+            G = np.vstack(
+                (
+                    G,
+                    np.fft.irfft(Lambda[:, np.newaxis] * Gr,
+                                 axis=0,
+                                 norm="ortho")
+                )
+            )
+
+        # Compute Inner products
+        Lambda = Lconj[:, 0]
         DTy = np.fft.irfft(
-            np.conj(Lambda[:, np.newaxis]) * np.fft.rfft(Y, axis=0, norm="ortho"),
+            Lambda[:, np.newaxis] * FY,
             axis=0,
             norm="ortho",
         )
-        for i in range(1, n_components):
-            Lambda = L[:, i]
+        for i in range(1, n_components):                
+            Lambda = Lconj[:, i]
             DTy = np.vstack(
                 (
                     DTy,
                     np.fft.irfft(
-                        np.conj(Lambda[:, np.newaxis])
-                        * np.fft.rfft(Y, axis=0, norm="ortho"),
+                        Lambda[:, np.newaxis] * FY,
                         axis=0,
                         norm="ortho",
                     ),
@@ -131,26 +165,31 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
 
         # Dictionary update
         # Do Blockwise update
+        newL = np.zeros_like(L)
         print(f"Iteration: {it}, Blockwise Update")
         for block in range(n_components):
             print(f"Iteration: {it}, Block: {block}")
-            Zl = np.fft.rfft(Y, axis=0, norm="ortho")
+            Zl = copy(FY)
             for otherblock in range(n_components):
                 if otherblock != block:
-                    Zl -= np.diag(L[:, otherblock]) @ np.fft.rfft(
-                        X[N * otherblock : N * (otherblock + 1), :],
+                    Lambda = L[:, otherblock]
+                    Zl -= Lambda[:, np.newaxis] * np.fft.rfft(
+                        X[N * otherblock: N * (otherblock + 1), :],
                         axis=0,
                         norm="ortho",
                     )
 
             # Do lambda-wise update for each row in Zl
             FXl = np.conj(
-                np.fft.rfft(X[N * block : N * (block + 1), :], axis=0, norm="ortho")
+                np.fft.rfft(X[N * block: N * (block + 1), :],
+                            axis=0, norm="ortho")
             )
             for row in range(Zl.shape[0]):
                 FXli = FXl[row, :]  # shape (
                 Zli = Zl[row, :]
-                L[row, block] = Zli @ FXli / (1e-16 + np.linalg.norm(FXli) ** 2)
+                newL[row, block] = Zli @ FXli / \
+                    (1e-16 + np.linalg.norm(FXli) ** 2)
+        L = newL
 
     Lambda = L[:, 0]
     D = np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
@@ -159,6 +198,7 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
         D = np.hstack(
             (D, np.fft.irfft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho"))
         )
+    D = normalize(D, axis=0, norm="l2")
 
     return D
 
@@ -168,6 +208,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     # Y, Y_norm = normalize(data, norm="l2", axis=0, return_norm=True)
     # Y = Y[:, Y_norm >= np.finfo(Y.dtype).eps]
     Y = data
+    Y_norm = np.linalg.norm(Y, ord=2, axis=0)
+    Y = Y[:, Y_norm >= np.finfo(Y.dtype).eps]
     # initial lambdas, (N, n_components)
     # L = np.ones((Y.shape[0], n_components))
     rng = np.random.default_rng()
@@ -191,6 +233,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
         n_nonzero_coefs=int(0.01 * n_columns), fit_intercept=False
     )
 
+    FY = np.fft.fft(Y, axis=0, norm="ortho")
+
     for it in range(n_iter):
         print(f"Iteration: {it}")
         # Construct full dictionary
@@ -203,7 +247,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
             # D = np.hstack((D, np.fft.ifft(np.diag(L[:, i]) @ F, axis=0, norm="ortho")))
             Lambda = L[:, i]
             D = np.hstack(
-                (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho"))
+                (D, np.fft.ifft(Lambda[:, np.newaxis]
+                                * F, axis=0, norm="ortho"))
             )
         D = np.real(D)
 
@@ -221,27 +266,29 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
         print(f"Iteration: {it}, Blockwise Update")
         for block in range(n_components):
             print(f"Iteration: {it}, Block: {block}")
-            Zl = np.fft.fft(Y, axis=0, norm="ortho")
+            Zl = copy(FY)
             for otherblock in range(n_components):
                 if otherblock != block:
                     Ls = L[:, otherblock]
                     # Zl -= np.diag(L[:, otherblock]) @ np.fft.fft(
                     #     X[N * otherblock: N * (otherblock + 1), :], axis=0, norm="ortho")
                     Zl -= Ls[:, np.newaxis] * np.fft.fft(
-                        X[N * otherblock : N * (otherblock + 1), :],
+                        X[N * otherblock: N * (otherblock + 1), :],
                         axis=0,
                         norm="ortho",
                     )
 
             # Do lambda-wise update for each row in Zl
             FXl = np.conj(
-                np.fft.fft(X[N * block : N * (block + 1), :], axis=0, norm="ortho"),
+                np.fft.fft(X[N * block: N * (block + 1), :],
+                           axis=0, norm="ortho"),
                 dtype=np.complex128,
             )
             for row in range(Zl.shape[0]):
                 FXli = FXl[row, :]  # shape (
                 Zli = Zl[row, :]
-                newL[row, block] = Zli @ FXli / (1e-16 + np.linalg.norm(FXli) ** 2)
+                newL[row, block] = Zli @ FXli / \
+                    (1e-16 + np.linalg.norm(FXli) ** 2)
         # Lnorm = np.linalg.norm(L, ord=2, axis=0)
         # L = L / Lnorm
         L = newL
@@ -250,7 +297,8 @@ def learn_dictionary(data: np.ndarray, n_components: int, n_iter: int):
     D = np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")
     for i in range(1, n_components):
         Lambda = L[:, i]
-        D = np.hstack((D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
+        D = np.hstack(
+            (D, np.fft.ifft(Lambda[:, np.newaxis] * F, axis=0, norm="ortho")))
     D = np.real(D)
     D = normalize(D, norm="l2", axis=0)
 
@@ -459,15 +507,23 @@ def model_separate(
     learned_bass_weights_R = mixture_weights_R[two:three, :]
     learned_others_weights_R = mixture_weights_R[three:four, :]
 
-    learned_vocals_L = np.ravel(vocals_components @ learned_vocals_weights_L, order="F")
-    learned_drums_L = np.ravel(drums_components @ learned_drums_weights_L, order="F")
-    learned_bass_L = np.ravel(bass_components @ learned_bass_weights_L, order="F")
-    learned_others_L = np.ravel(others_components @ learned_others_weights_L, order="F")
+    learned_vocals_L = np.ravel(
+        vocals_components @ learned_vocals_weights_L, order="F")
+    learned_drums_L = np.ravel(
+        drums_components @ learned_drums_weights_L, order="F")
+    learned_bass_L = np.ravel(
+        bass_components @ learned_bass_weights_L, order="F")
+    learned_others_L = np.ravel(
+        others_components @ learned_others_weights_L, order="F")
 
-    learned_vocals_R = np.ravel(vocals_components @ learned_vocals_weights_R, order="F")
-    learned_drums_R = np.ravel(drums_components @ learned_drums_weights_R, order="F")
-    learned_bass_R = np.ravel(bass_components @ learned_bass_weights_R, order="F")
-    learned_others_R = np.ravel(others_components @ learned_others_weights_R, order="F")
+    learned_vocals_R = np.ravel(
+        vocals_components @ learned_vocals_weights_R, order="F")
+    learned_drums_R = np.ravel(
+        drums_components @ learned_drums_weights_R, order="F")
+    learned_bass_R = np.ravel(
+        bass_components @ learned_bass_weights_R, order="F")
+    learned_others_R = np.ravel(
+        others_components @ learned_others_weights_R, order="F")
 
     learned_vocals = np.vstack((learned_vocals_L, learned_vocals_R)).T
     # learned_accompaniment = np.vstack(

@@ -4,7 +4,7 @@ from pidl.helpers import generate_four_stem_data_batch, model_train, model_separ
 from os import mkdir
 from soundfile import write
 import joblib
-import numpy as np
+# import numpy as np
 
 
 if __name__ == "__main__":
@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     data_gen = generate_four_stem_data_batch(mus_train, batch_size=batch_size, chunk_duration_train=10.0, chunk_duration_test=10.0)
 
-    components, data = model_train(data_gen, win_length=512, n_components=10, batch_size=batch_size, n_iter=20)
+    components, data = model_train(data_gen, win_length=1024, n_components=5, batch_size=batch_size, n_iter=20)
 
     data = next(data_gen)
 
