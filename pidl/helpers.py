@@ -112,9 +112,11 @@ def learn_dictionary_ompprecomp(data: np.ndarray, n_components: int, n_iter: int
     I = np.eye(N)
     F = np.fft.rfft(I, axis=0, norm="ortho")
 
-    # model = OrthogonalMatchingPursuit(fit_intercept=False, precompute=True)
+    n_columns = N * n_components
+
+    # model = OrthogonalMatchingPursuit(tol=1e-1, fit_intercept=False)
     model = OrthogonalMatchingPursuit(
-        n_nonzero_coefs=n_components, fit_intercept=False, precompute=True
+        n_nonzero_coefs=int(0.01 * n_columns), fit_intercept=False
     )
 
     FY = np.fft.rfft(Y, axis=0, norm="ortho")
@@ -398,7 +400,7 @@ def model_train(
 
     print("Starting Vocals")
     pool.apply_async(
-        learn_dictionary,
+        learn_dictionary_ompprecomp,
         args=(vocals_features,),
         kwds={"n_components": n_components, "n_iter": n_iter},
         callback=results.set_vocals,
@@ -406,7 +408,7 @@ def model_train(
 
     print("Starting Drums")
     pool.apply_async(
-        learn_dictionary,
+        learn_dictionary_ompprecomp,
         args=(drums_features,),
         kwds={"n_components": n_components, "n_iter": n_iter},
         callback=results.set_drums,
@@ -414,7 +416,7 @@ def model_train(
 
     print("Starting Bass")
     pool.apply_async(
-        learn_dictionary,
+        learn_dictionary_ompprecomp,
         args=(bass_features,),
         kwds={"n_components": n_components, "n_iter": n_iter},
         callback=results.set_bass,
@@ -422,7 +424,7 @@ def model_train(
 
     print("Starting Others")
     pool.apply_async(
-        learn_dictionary,
+        learn_dictionary_ompprecomp,
         args=(others_features,),
         kwds={"n_components": n_components, "n_iter": n_iter},
         callback=results.set_others,
