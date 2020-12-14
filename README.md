@@ -14,7 +14,7 @@ In this project, we consider the problem of MSS that separates a mixture into tr
 ![Image text](mlsp_fig1.png)
 
 ## Results: 
-The original and separated audios can be found here https://drive.google.com/drive/folders/1wmwz2jswQ3Gll8HcUnsxuO-79hAVBcfv?usp=sharing.
+The original and separated audios can be found here https://drive.google.com/drive/folders/11-ZSrFAOEvCOxQjw4TkvBriijMzPjE8s?usp=sharing.
 
 ## Contributions:
 Mohammed Danish is the author of the code and he has constructed the framework. All the team members worked collaboratively to write the code and tune the parameters via Colab.
