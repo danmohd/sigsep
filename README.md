@@ -11,7 +11,7 @@ We use the musdb18 dataset https://zenodo.org/record/3338373#.X9bCOen0l24, which
 Music Source Separation (MSS) is one of the essential tasks in signal processing research, which tackles the problem of separating several co-exist audio signals from a given mixture signal. The separated results can be further used in many other tasks such as instrument identification, automatic music transcription, information retrieval, and structured coding.
 
 In this project, we consider the problem of MSS that separates a mixture into tracks consisting of Vocals, Drums, Bass and Other sources in waveform domain. The audio signals representing in time domain are shown in the following figure.
-![Image text](mlsp_fig1.jpg)
+![Image text](mlsp_fig1.png)
 
 ## Contributions:
 Mohammed Danish is the author of the code and he has constructed the framework. All the team members worked collaboratively to write the code and tune the parameters via Colab.
