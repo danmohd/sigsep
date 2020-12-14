@@ -1,4 +1,4 @@
-# sigsep
+# Music Source Separation Using Overcomplete Dictionary Representations of Audio Waveforms
 >  MLSP Fall 2020 Project Repo for Team 5: "Music Source Separation Using Overcomplete Dictionary Representations of Audio Waveforms"
 
 ## Abstract:
