@@ -18,3 +18,7 @@ The original and separated audios can be found here https://drive.google.com/dri
 
 ## Contributions:
 Mohammed Danish is the author of the code and he has constructed the framework. All the team members worked collaboratively to write the code and tune the parameters via Colab.
+
+## TODO:
+- Improve documentation
+- Incorporate windowed overlap-add for reconstruction
